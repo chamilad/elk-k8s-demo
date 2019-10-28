@@ -59,8 +59,19 @@ items:
         }
       }
 
-      filter {}
-      output {}
+      filter {
+        if "nginx" in [kubernetes][labels][app] {
+          grok {
+           match => { "message" => "%{IPORHOST:clientip} %{USER:ident} %{USER:auth} \[%{HTTPDATE:timestamp}\] \"(?:%{WORD:verb} %{NOTSPACE:request}(?: HTTP/%{NUMBER:httpversion})?|%{DATA:rawrequest})\" %{NUMBER:response} (?:%{NUMBER:bytes}|-)"  } 
+           overwrite => ["message"]
+           add_tag => [ "groked" ]
+          } 
+       }
+      }
+
+      output {
+          stdout {}
+      }
 # ========================================================================
 
  
