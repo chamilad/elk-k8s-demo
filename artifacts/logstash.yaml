@@ -70,7 +70,14 @@ items:
       }
 
       output {
+        if "" in [kubernetes][labels][app] {
           stdout {}
+        }
+       
+        elasticsearch {
+          hosts => ["elasticsearch:9200"]
+          index => "logstash-%{+YYYY.MM.dd}-%{[kubernetes][namespace]}"
+        }
       }
 # ========================================================================
 

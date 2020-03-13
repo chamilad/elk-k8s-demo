@@ -1,0 +1,124 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elasticsearch-config
+  labels:
+    app: elasticsearch
+data:
+  elasticsearch.yml: |
+    # bind to all IP addressses
+    network.host: 0.0.0.0
+
+    bootstrap.memory_lock: false
+
+    discovery.seed_hosts:
+    - elasticsearch-headless
+
+    cluster.name: elasticsearch
+
+    node.master: true
+    node.data: true
+    node.ingest: true
+
+    cluster.initial_master_nodes:
+    - elasticsearch-0
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  labels:
+    app: elasticsearch
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: elasticsearch-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      volumes:
+        - name: elasticsearch-config
+          configMap:
+            name: elasticsearch-config
+      initContainers:
+        - image: registry.hub.docker.com/library/alpine:3.6
+          command: ["/sbin/sysctl", "-w", "vm.max_map_count=262144"]
+          name: elasticsearch-logging-init
+          securityContext:
+            privileged: true
+      containers:
+        - name: elasticsearch
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: elasticsearch-config
+              mountPath: /usr/share/elasticsearch/config/elasticsearch.yml
+              subPath: elasticsearch.yml
+          image: "docker.elastic.co/elasticsearch/elasticsearch:7.5.2"
+          ports:
+            - containerPort: 9200
+              name: http
+              protocol: TCP
+            - containerPort: 9300
+              name: transport
+              protocol: TCP
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: elasticsearch-headless
+  labels:
+    app: elasticsearch
+spec:
+  # for master discovery, service name must match StatefulSet's
+  # spec.serviceName for consistent naming to work
+  clusterIP: None
+  selector:
+    app: elasticsearch
+  publishNotReadyAddresses: true
+  ports:
+    - name: transport
+      protocol: TCP
+      port: 9300
+      targetPort: 9300
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: elasticsearch
+  labels:
+    app: elasticsearch
+spec:
+  selector:
+    app: elasticsearch
+  # don't switch between pods often
+  sessionAffinity: ClientIP
+  ports:
+    - name: http
+      protocol: TCP
+      port: 9200
+      targetPort: 9200
+    - name: transport
+      protocol: TCP
+      port: 9300
+      targetPort: 9300
+
